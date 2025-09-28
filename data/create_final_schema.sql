@@ -1,5 +1,5 @@
 -- ECDICT 最终数据库表结构
-use english;
+USE DB_NAME;
 
 -- 1. 单词词典表
 CREATE TABLE IF NOT EXISTS word_dictionary (

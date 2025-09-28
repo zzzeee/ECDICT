@@ -11,7 +11,12 @@ import os
 import csv
 from collections import defaultdict
 
-DB_NAME = "english"
+while True:
+    DB_NAME = input("请输入数据库名称: ")
+    if DB_NAME:
+        break
+
+DB_NAME = DB_NAME.strip()
 
 def british_to_american_phonetic(uk_phonetic):
     """英式音标转美式音标"""
@@ -135,6 +140,9 @@ def load_stardict_data():
                         'audio': row.get('audio', '')
                     }
                     count += 1
+
+                    if count % 100000 == 0:
+                        print(f"已加载 {count} 个单词...")
     
     except Exception as e:
         print(f"加载stardict.csv失败: {e}")
@@ -151,7 +159,7 @@ def export_word_dictionary(stardict_data):
     
     with open('data/insert_word_dictionary.sql', 'w', encoding='utf-8') as f:
         f.write("-- 单词词典完整数据（修正版）\n")
-        f.write(f"use {DB_NAME};\n\n")
+        f.write(f"USE {DB_NAME};\n\n")
         
         count = 0
         batch_size = 1000
@@ -220,7 +228,7 @@ def export_phrase_dictionary(stardict_data):
     try:
         with open('data/insert_phrase_dictionary.sql', 'w', encoding='utf-8') as f:
             f.write("-- 词组词典完整数据（修正版）\n")
-            f.write(f"use {DB_NAME};\n\n")
+            f.write(f"USE {DB_NAME};\n\n")
             
             for word, data in stardict_data.items():
                 if ' ' in word: # 只要词组, 不要单词
@@ -260,7 +268,7 @@ def export_word_lemma(stardict_data, word_id_map):
     
     with open('data/insert_word_lemma.sql', 'w', encoding='utf-8') as f:
         f.write("-- 词形变换完整数据（修正版）\n")
-        f.write(f"use {DB_NAME};\n\n")
+        f.write(f"USE {DB_NAME};\n\n")
         
         count = 0
         batch_size = 1000
@@ -314,7 +322,7 @@ def export_word_resemble(word_id_map):
         
         with open('data/insert_word_resemble.sql', 'w', encoding='utf-8') as f:
             f.write("-- 近义词完整数据（修正版）\n")
-            f.write(f"use {DB_NAME};\n\n")
+            f.write(f"USE {DB_NAME};\n\n")
             
             count = 0
             batch_size = 500
@@ -391,7 +399,7 @@ def export_word_roots():
         
         with open('data/insert_word_roots.sql', 'w', encoding='utf-8') as f:
             f.write("-- 词根词缀完整数据（修正版）\n")
-            f.write(f"use {DB_NAME};\n\n")
+            f.write(f"USE {DB_NAME};\n\n")
             
             count = 0
             batch_size = 100
@@ -450,7 +458,7 @@ def export_word_root_example(root_id_map, word_id_map):
         
         with open('data/insert_word_root_example.sql', 'w', encoding='utf-8') as f:
             f.write("-- 词根例词关系完整数据（修正版）\n")
-            f.write(f"use {DB_NAME};\n\n")
+            f.write(f"USE {DB_NAME};\n\n")
             
             count = 0
             batch_size = 500
@@ -498,72 +506,124 @@ def create_import_script():
 
 echo "开始导入ECDICT修正版数据..."
 
+DB_NAME="{DB_NAME}"
+isReplaceDBName=false
+
+read -p "当前数据库: $DB_NAME, 请输入新的数据库(回车保持不变): " db_name
+if [ -n "$db_name" ]; then
+    DB_NAME="$db_name"
+    isReplaceDBName=true
+fi
+echo "数据库: $DB_NAME"
+
+while true; do
+    read -s -p "请输入mysql密码: " password
+    echo  # 换行
+    if [ -n "$password" ]; then
+        break
+    fi
+done
+
 # 检查MySQL是否可用
 if ! command -v mysql &> /dev/null; then
     echo "错误: 未找到MySQL命令"
     exit 1
 fi
 
+process_file() {
+    if [ "$isReplaceDBName" = false ]; then
+        return
+    fi
+
+    local filename="$1"
+    
+    if [[ ! -f "$filename" ]]; then
+        echo "错误: 文件 '$filename' 不存在"
+        return 1
+    fi
+    
+    echo "正在处理文件: $filename"
+    # 在这里添加你的处理逻辑
+    # 检测操作系统
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' -E "s/^USE [a-zA-Z_][a-zA-Z0-9_]*;/USE $DB_NAME;/" "$filename"
+    else
+        # Linux
+        sed -i -E "s/^USE [a-zA-Z_][a-zA-Z0-9_]*;/USE $DB_NAME;/" "$filename"
+    fi
+    echo "文件处理完成"
+}
+
 # 1. 创建数据库和表
+echo  # 换行
 echo "1. 创建数据库表结构..."
-mysql -u root -p < create_final_schema.sql
+process_file "create_final_schema.sql"
+mysql -u root -p"$password" < create_final_schema.sql
 if [ $? -ne 0 ]; then
     echo "错误: 创建表结构失败"
     exit 1
 fi
 
 # 2. 导入单词词典
+echo  # 换行
 echo "2. 导入单词词典..."
-mysql -u root -p < insert_word_dictionary.sql
-if [ $? -ne 0 ]; then
+process_file "insert_word_dictionary.sql"
+if ! mysql -u root -p"$password" < insert_word_dictionary.sql; then
     echo "错误: 导入单词词典失败"
     exit 1
 fi
 
 # 3. 导入词组词典
+echo  # 换行
 echo "3. 导入词组词典..."
-mysql -u root -p < insert_phrase_dictionary.sql
-if [ $? -ne 0 ]; then
+process_file "insert_phrase_dictionary.sql"
+if ! mysql -u root -p"$password" < insert_phrase_dictionary.sql; then
     echo "错误: 导入词组词典失败"
     exit 1
 fi
 
 # 4. 导入词根数据
+echo  # 换行
 echo "4. 导入词根数据..."
-mysql -u root -p < insert_word_roots.sql
-if [ $? -ne 0 ]; then
+process_file "insert_word_roots.sql"
+if ! mysql -u root -p"$password" < insert_word_roots.sql; then
     echo "错误: 导入词根数据失败"
     exit 1
 fi
 
 # 5. 导入词形数据
+echo  # 换行
 echo "5. 导入词形数据..."
-mysql -u root -p < insert_word_lemma.sql
-if [ $? -ne 0 ]; then
+process_file "insert_word_lemma.sql"
+if ! mysql -u root -p"$password" < insert_word_lemma.sql; then
     echo "错误: 导入词形数据失败"
     exit 1
 fi
 
 # 6. 导入近义词数据
+echo  # 换行
 echo "6. 导入近义词数据..."
-mysql -u root -p < insert_word_resemble.sql
-if [ $? -ne 0 ]; then
+process_file "insert_word_resemble.sql"
+if ! mysql -u root -p"$password" < insert_word_resemble.sql; then
     echo "错误: 导入近义词数据失败"
     exit 1
 fi
 
 # 7. 导入词根例词关系
+echo  # 换行
 echo "7. 导入词根例词关系..."
-mysql -u root -p < insert_word_root_example.sql
-if [ $? -ne 0 ]; then
+process_file "insert_word_root_example.sql"
+if ! mysql -u root -p"$password" < insert_word_root_example.sql; then
     echo "错误: 导入词根例词关系失败"
     exit 1
 fi
 
+echo  # 换行
 echo "数据导入完成！"
 echo "数据统计："
-mysql -u root -p -e "
-USE {DB_NAME};
+mysql -u root -p"$password" -e "
+USE $DB_NAME;
 SELECT 'word_dictionary' as table_name, COUNT(*) as count FROM word_dictionary
 UNION ALL
 SELECT 'phrase_dictionary', COUNT(*) FROM phrase_dictionary
@@ -579,11 +639,11 @@ SELECT 'word_root_example', COUNT(*) FROM word_root_example;
 '''
     
     with open('data/import_all_data.sh', 'w', encoding='utf-8') as f:
-        f.write(script_content)
+        f.write(script_content.replace('{DB_NAME}', DB_NAME))
     
     # 设置执行权限
     os.chmod('data/import_all_data.sh', 0o755)
-    print("\n\n已创建导入脚本: data/import_all_data.sh")
+    print("\n已创建导入脚本: data/import_all_data.sh")
 
 def main():
     print("ECDICT 修正版数据导出")
@@ -627,6 +687,8 @@ def main():
     print("- insert_word_roots.sql (词根数据)")
     print("- insert_word_root_example.sql (词根例词关系)")
     print("- import_all_data.sh (导入脚本)")
+
+    print("\n运行导入: cd data && ./import_all_data.sh")
 
 if __name__ == '__main__':
     main()

@@ -7,3 +7,5 @@ __pycache__
 data/*.csv
 data/insert_*.sql
 data/import_all_data.sh
+
+test.py
